@@ -43,7 +43,9 @@ def _choice(name: str, confidence: float) -> DeciderResult:
     )
 
 
-def _grade(fulfils: float, grounded: float = 0.9) -> DeciderResult:
+def _grade(
+    fulfils: float, grounded: float = 0.9, premature: float = 0.1, fault: str = "none"
+) -> DeciderResult:
     return DeciderResult(
         answers={
             "fulfils": {"type": "noul", "noul": fulfils},
@@ -54,6 +56,13 @@ def _grade(fulfils: float, grounded: float = 0.9) -> DeciderResult:
                 "confidence": 0.8,
                 "legend": {"0": "poor", "1": "ok", "2": "good"},
                 "probabilities": {"2": 0.8},
+            },
+            "premature": {"type": "noul", "noul": premature},
+            "fault": {
+                "type": "choice",
+                "choice": fault,
+                "confidence": 0.9,
+                "probabilities": {fault: 0.9, **({"none": 0.1} if fault != "none" else {"invents_facts": 0.1})},
             },
         },
         latency_ms=7.0,

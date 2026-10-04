@@ -31,6 +31,14 @@ def test_eval_questions():
     ]
     assert question_payload(quality)["criteria"][0].startswith("poor")
 
+    premature = load_question("eval_premature")
+    fault = load_question("eval_fault")
+    assert premature.type == "noul" and premature.fail
+    assert set(premature.criteria) == {"true", "false"}
+    assert fault.type == "choice"
+    assert set(fault.criteria) == {"none", "ignores_task", "invents_facts", "unfinished", "wrong_format"}
+    assert "fail" not in question_payload(fault)
+
 
 def test_graph_code_has_no_prompt_prose():
     from pathlib import Path

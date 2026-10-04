@@ -7,6 +7,8 @@ _EVALS = (
     ("fulfils", "eval_fulfils"),
     ("grounded", "eval_grounded"),
     ("quality", "eval_quality"),
+    ("premature", "eval_premature"),
+    ("fault", "eval_fault"),
 )
 
 
@@ -23,18 +25,28 @@ async def evaluate(state: AgentState) -> dict:
 
     fulfils = float(result.answers["fulfils"]["noul"])
     grounded = float(result.answers["grounded"]["noul"])
+    premature = float(result.answers["premature"]["noul"])
     quality = result.answers["quality"]
+    reason = _reason(result.answers["fault"])
+    action = _decision(fulfils, grounded, premature, state.get("retries", 0))
     passed = fulfils >= settings.eval_noul_min and grounded >= settings.eval_noul_min
     return {
         "verdict": {
+            "action": action,
             "passed": passed,
             "fulfils": fulfils,
             "grounded": grounded,
+            "premature": premature,
             "quality": float(quality["score"]),
             "quality_confidence": float(quality.get("confidence", 0.0)),
             "quality_breakdown": _breakdown(quality),
+            "reason": reason,
         },
-        "feedback": None if passed else _feedback(loaded, fulfils, grounded),
+        "feedback": (
+            None
+            if action == "explain"
+            else _feedback(loaded, fulfils, grounded, premature, reason["fault"])
+        ),
     }
 
 
@@ -52,10 +64,39 @@ def _breakdown(quality: dict) -> list[dict[str, float | str]]:
     return sorted(rows, key=lambda row: row["probability"], reverse=True)
 
 
-def _feedback(loaded: dict[str, Question], fulfils: float, grounded: float) -> str:
-    notes: list[str] = []
-    if fulfils < settings.eval_noul_min and loaded["fulfils"].fail:
-        notes.append(loaded["fulfils"].fail)
-    if grounded < settings.eval_noul_min and loaded["grounded"].fail:
-        notes.append(loaded["grounded"].fail)
+def _decision(fulfils: float, grounded: float, premature: float, retries: int) -> str:
+    """The only place the next step is decided; the decider just classifies."""
+    minimum = settings.eval_noul_min
+    if grounded < minimum or premature >= minimum:
+        return "ask"
+    if fulfils < minimum and retries < settings.max_retries:
+        return "revise"
+    return "explain"
+
+
+def _reason(fault: dict) -> dict:
+    # A choice answer keys `probabilities` by label, so `_breakdown` needs no legend.
+    return {
+        "fault": str(fault["choice"]),
+        "confidence": float(fault.get("confidence", 0.0)),
+        "breakdown": _breakdown(fault),
+    }
+
+
+def _feedback(
+    loaded: dict[str, Question],
+    fulfils: float,
+    grounded: float,
+    premature: float,
+    fault: str,
+) -> str:
+    minimum = settings.eval_noul_min
+    failing = (
+        ("fulfils", fulfils < minimum),
+        ("grounded", grounded < minimum),
+        ("premature", premature >= minimum),
+    )
+    notes = [loaded[key].fail for key, failed in failing if failed and loaded[key].fail]
+    if fault != "none":
+        notes.append(loaded["fault"].criteria[fault])
     return " ".join(notes)
