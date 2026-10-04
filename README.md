@@ -4,17 +4,26 @@ A [LangGraph](https://langchain-ai.github.io/langgraph/) agent hosted with [Amaz
 
 Workflows: `summarize`, `classify`, `create`, `extract`. Prompts live in [`agent/prompts/`](agent/prompts). Graph nodes do not contain prompt text. Each node is its own file under [`agent/graph/nodes/`](agent/graph/nodes).
 
-```
-route --choice--> summarize | classify | create | extract ----+
-         |                                   ^ same workflow  |
-         +-- low confidence --> clarify      | revise         v
-                                             +--------------- evaluate
-                                                              |      |
-                                                      explain |      | ask
-                                                              v      v
-                                                           explain  ask (one question, then END)
-                                                              v
-                                                           finalize
+```mermaid
+flowchart TD
+    prompt([User prompt]) --> route
+    subgraph workflows [One workflow runs]
+        direction LR
+        summarize
+        classify
+        create
+        extract
+    end
+    route -- "confident choice" --> workflows
+    route -- "low confidence" --> clarify["clarify: ask the user to pick a workflow"]
+    workflows --> evaluate
+    evaluate -- "revise: same workflow, with feedback" --> workflows
+    evaluate -- "ask" --> ask["ask: one question for the user"]
+    evaluate -- "explain" --> explain
+    explain --> finalize
+    finalize --> finish([END])
+    ask --> finish
+    clarify --> finish
 ```
 
 `evaluate` asks the decider five questions about the output in one call. Three are yes/no: does the output fulfil the request (fulfils), is it grounded in the user's text (grounded), and is it premature to answer before asking the user for something they did not provide (premature). One is a score: how good is the output (quality: poor, ok, good). One is a choice: what is the main fault, over `none`, `ignores_task`, `invents_facts`, `unfinished`, `wrong_format`. Python code then decides the action. The rules run in this order and the first match wins:
