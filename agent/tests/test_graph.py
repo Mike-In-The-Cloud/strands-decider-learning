@@ -5,6 +5,7 @@ from decider.client import DeciderResult
 from graph import deps
 from graph.builder import build_graph
 from graph.stream import initial_state, iter_graph_events
+from prompts.loader import load_question
 
 
 class FakeLLM:
@@ -90,6 +91,7 @@ async def test_confident_route_runs_workflow_and_passes(monkeypatch, llm):
     assert result["workflow"] == "summarize"
     assert result["output"] == "output-1"
     assert result["verdict"]["passed"] is True
+    assert result["verdict"]["action"] == "explain"
     assert result["verdict"]["quality_breakdown"] == [{"label": "good", "probability": 0.8}]
     # Second LLM call is the explanation of the grades.
     assert result["explanation"] == "output-2"
@@ -121,35 +123,55 @@ async def test_failed_grade_retries_the_same_workflow_once(monkeypatch, llm):
 
 @pytest.mark.asyncio
 async def test_stream_emits_node_timing_and_decider_detail(monkeypatch, llm):
-    _patch_decider(monkeypatch, [_choice("extract", 0.88), _grade(0.7, 0.2), _grade(0.7, 0.2)])
-    # Second grade still fails; retries is then 1 so the graph stops.
+    _patch_decider(monkeypatch, [_choice("extract", 0.88), _grade(0.7, 0.2)])
+    # Ungrounded output: the graph asks the user instead of retrying or explaining.
     events = [event async for event in iter_graph_events("Pull the amounts out.")]
     types = [event["type"] for event in events]
     assert types[0] == "node_start"
     assert "decider" in types
     assert types[-1] == "done"
+    assert "result" not in types
     ends = [event for event in events if event["type"] == "node_end"]
-    assert [event["node"] for event in ends] == [
-        "route",
-        "extract",
-        "evaluate",
-        "extract",
-        "evaluate",
-        "explain",
-        "finalize",
-    ]
+    assert [event["node"] for event in ends] == ["route", "extract", "evaluate", "ask"]
     assert all(event["ms"] >= 0 for event in ends)
     done = events[-1]
+    assert done["verdict"]["action"] == "ask"
     assert done["verdict"]["passed"] is False
+    assert done["output"] == "output-2"
     assert done["workflow"] == "extract"
-    assert done["explanation"] == "output-3"
-    # The answer is sent before the explanation call starts.
-    result = next(event for event in events if event["type"] == "result")
-    assert result["output"] == "output-2"
-    assert result["verdict"]["passed"] is False
-    explain_end = next(e for e in ends if e["node"] == "explain")
-    assert events.index(result) < events.index(explain_end)
-    assert llm.calls == 3
+    assert done["explanation"] is None
+    assert llm.calls == 2
+    assert any(event["type"] == "llm" and event["node"] == "ask" for event in events)
+    # The question is written from the request, the unsent draft, and the evaluator's note.
+    ask_text = llm.messages[1][1].content
+    assert "Pull the amounts out." in ask_text
+    assert "output-1" in ask_text
+    assert load_question("eval_grounded").fail in ask_text
     decider = [event for event in events if event["type"] == "decider"]
     assert decider[0]["node"] == "route"
     assert decider[1]["answers"]["fulfils"]["noul"] == 0.7
+
+
+@pytest.mark.asyncio
+async def test_stream_sends_result_before_explanation(monkeypatch, llm):
+    _patch_decider(monkeypatch, [_choice("summarize", 0.9), _grade(0.9)])
+    events = [event async for event in iter_graph_events("Summarise this note.")]
+    result = next(event for event in events if event["type"] == "result")
+    assert result["output"] == "output-1"
+    assert result["verdict"]["action"] == "explain"
+    # The answer is sent before the explanation call finishes.
+    explain_end = next(e for e in events if e["type"] == "node_end" and e["node"] == "explain")
+    assert events.index(result) < events.index(explain_end)
+    assert events[-1]["explanation"] == "output-2"
+
+
+@pytest.mark.asyncio
+async def test_premature_asks_even_when_grades_pass(monkeypatch, llm):
+    _patch_decider(monkeypatch, [_choice("create", 0.95), _grade(0.9, 0.9, premature=0.8)])
+    result = await build_graph().ainvoke(initial_state("Write a haiku about rain."))
+    assert result["verdict"]["action"] == "ask"
+    assert result["verdict"]["passed"] is True
+    assert result["output"] == "output-2"
+    assert result["explanation"] is None
+    assert result["retries"] == 0
+    assert llm.calls == 2

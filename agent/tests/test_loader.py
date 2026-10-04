@@ -3,7 +3,7 @@ from prompts.loader import load_prompt, load_question, question_payload
 
 
 def test_workflow_prompts_are_nonempty():
-    for name in (*WORKFLOWS, "clarify"):
+    for name in (*WORKFLOWS, "clarify", "ask"):
         body = load_prompt(name)
         assert body
         assert "---" not in body.splitlines()[0]

@@ -24,7 +24,9 @@ def test_after_route_clarifies_when_unsure_or_unknown():
     assert after_route(_state(workflow="nope", route_confidence=0.99)) == "clarify"
 
 
-def test_after_evaluate_explains_or_retries_once():
-    assert after_evaluate(_state(verdict={"passed": True}, retries=0)) == "explain"
-    assert after_evaluate(_state(verdict={"passed": False}, retries=0)) == "summarize"
-    assert after_evaluate(_state(verdict={"passed": False}, retries=1, workflow="create")) == "explain"
+def test_after_evaluate_maps_action_to_next_node():
+    assert after_evaluate(_state(verdict={"action": "explain"})) == "explain"
+    assert after_evaluate(_state(verdict={"action": "revise"})) == "summarize"
+    assert after_evaluate(_state(verdict={"action": "revise"}, workflow="nope")) == "explain"
+    assert after_evaluate(_state(verdict={"action": "ask"})) == "ask"
+    assert after_evaluate(_state(verdict=None)) == "explain"

@@ -12,16 +12,12 @@ def after_route(state: AgentState) -> str:
 
 
 def after_evaluate(state: AgentState) -> str:
-    """Retry the chosen workflow while retries remain, else explain the grades.
-
-    `retries` counts completed revision attempts. It is 0 on the first
-    evaluation, then incremented by the workflow node when it runs with
-    feedback. `max_retries` is how many revisions are allowed.
-    """
+    """Branch on the evaluator's decision. The policy lives in evaluate.py."""
     verdict = state.get("verdict") or {}
+    action = verdict.get("action")
     workflow = state.get("workflow")
-    if verdict.get("passed"):
-        return "explain"
-    if state.get("retries", 0) >= settings.max_retries or workflow not in WORKFLOWS:
-        return "explain"
-    return str(workflow)
+    if action == "ask":
+        return "ask"
+    if action == "revise" and workflow in WORKFLOWS:
+        return str(workflow)
+    return "explain"
