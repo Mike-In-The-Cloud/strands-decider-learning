@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ChatMessage } from "../types";
+import type { ChatMessage, Verdict } from "../types";
 
 const EXAMPLES = [
   {
@@ -21,6 +21,16 @@ const EXAMPLES = [
       "Extract the structured fields: Ada Lovelace met Charles Babbage on 5 June 1833. The grant was £1,500 and the report was due 12 August.",
   },
 ];
+
+function verdictLabel(v: Verdict): string {
+  if (v.action === "ask") return "asked for more detail";
+  return v.passed ? "passed" : "returned after review";
+}
+
+function verdictClass(v: Verdict): "ask" | "pass" | "fail" {
+  if (v.action === "ask") return "ask";
+  return v.passed ? "pass" : "fail";
+}
 
 export function ChatPanel({
   messages,
@@ -55,9 +65,11 @@ export function ChatPanel({
             <div className="who">{message.role === "user" ? "You" : message.workflow ?? "Agent"}</div>
             <pre>{message.text}</pre>
             {message.verdict && (
-              <div className={message.verdict.passed ? "verdict pass" : "verdict fail"}>
-                {message.verdict.passed ? "passed" : "returned after review"} · fulfils {message.verdict.fulfils.toFixed(2)} · grounded{" "}
-                {message.verdict.grounded.toFixed(2)} · quality {message.verdict.quality.toFixed(2)}
+              <div className={`verdict ${verdictClass(message.verdict)}`}>
+                {verdictLabel(message.verdict)} · fulfils {message.verdict.fulfils.toFixed(2)} · grounded{" "}
+                {message.verdict.grounded.toFixed(2)} · premature {message.verdict.premature.toFixed(2)} · quality{" "}
+                {message.verdict.quality.toFixed(2)}
+                {message.verdict.reason.fault !== "none" && ` · fault ${message.verdict.reason.fault.replaceAll("_", " ")}`}
               </div>
             )}
             {message.explaining && <div className="explanation pending">explaining the grades…</div>}

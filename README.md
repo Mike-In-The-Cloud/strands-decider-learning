@@ -5,20 +5,27 @@ A [LangGraph](https://langchain-ai.github.io/langgraph/) agent hosted with [Amaz
 Workflows: `summarize`, `classify`, `create`, `extract`. Prompts live in [`agent/prompts/`](agent/prompts). Graph nodes do not contain prompt text. Each node is its own file under [`agent/graph/nodes/`](agent/graph/nodes).
 
 ```
-route --choice--> summarize | classify | create | extract --+
-         |                                                   |
-         +-- low confidence --> clarify                     v
-                                                            evaluate
-                                                            |  pass, or retries used up
-                                                            v
-                                                          explain
-                                                            v
-                                                         finalize
+route --choice--> summarize | classify | create | extract ----+
+         |                                   ^ same workflow  |
+         +-- low confidence --> clarify      | revise         v
+                                             +--------------- evaluate
+                                                              |      |
+                                                      explain |      | ask
+                                                              v      v
+                                                           explain  ask (one question, then END)
+                                                              v
+                                                           finalize
 ```
 
-A failed grade (fulfils or grounded below `EVAL_NOUL_MIN`) sends the same workflow back once with the failing criterion as feedback.
+`evaluate` asks the decider five questions about the output in one call. Three are yes/no: does the output fulfil the request (fulfils), is it grounded in the user's text (grounded), and is it premature to answer before asking the user for something they did not provide (premature). One is a score: how good is the output (quality: poor, ok, good). One is a choice: what is the main fault, over `none`, `ignores_task`, `invents_facts`, `unfinished`, `wrong_format`. Python code then decides the action. The rules run in this order and the first match wins:
 
-The decider returns probabilities, not reasons. `explain` asks Haiku to read the output against each criterion and say what most plausibly drove each grade. The UI shows this under the agent's reply, labelled as Haiku's reading.
+1. `ask` when grounded is below `EVAL_NOUL_MIN` or premature is at or above it. The `ask` node writes one question for the user from the request, the unsent draft, and the evaluator's feedback. The draft is not returned.
+2. `revise` when fulfils is below `EVAL_NOUL_MIN` and fewer than `MAX_RETRIES` revisions have run. The same workflow runs again with the feedback.
+3. `explain` otherwise.
+
+The fault never changes the action. The shape follows the upstream [`tool_call_intervention.py`](https://github.com/strands-labs/strands-decider/blob/main/examples/strands/tool_call_intervention.py) example: the model classifies, the code decides.
+
+The decider cannot write a reason. It names the main fault as a probability over fixed options. `explain` asks Haiku to read the output against each criterion, starting from that fault, and say what most plausibly drove each grade. The UI shows this under the agent's reply, labelled as Haiku's reading.
 
 ## Run locally
 
@@ -38,7 +45,7 @@ Each process also runs on its own:
 | Target | Port | What it is |
 |---|---|---|
 | `make decider` | 8099 | `strands-decider serve`. Pins in [`decider/pyproject.toml`](decider/pyproject.toml). `GET /health` returns the model once loaded. |
-| `make agent` | 8080 | `BedrockAgentCoreApp` in [`agent/main.py`](agent/main.py) via `agentcore dev --port 8080`. Standalone it shows the AgentCore TUI (`--no-browser`); under `make dev` it uses `--logs` so all three processes log to the one terminal. Waits up to 10 s for a just-stopped agent to release the port, then fails if 8080 is taken (without `--port` the CLI would silently move to 8081 and the UI proxy would 500). `POST /invocations` streams `node_start`, `node_end` (with `ms`), `decider`, `llm`, `result` (the answer, before the explanation is written), `done`. |
+| `make agent` | 8080 | `BedrockAgentCoreApp` in [`agent/main.py`](agent/main.py) via `agentcore dev --port 8080`. Standalone it shows the AgentCore TUI (`--no-browser`); under `make dev` it uses `--logs` so all three processes log to the one terminal. Waits up to 10 s for a just-stopped agent to release the port, then fails if 8080 is taken (without `--port` the CLI would silently move to 8081 and the UI proxy would 500). `POST /invocations` streams `node_start`, `node_end` (with `ms`), `decider`, `llm`, `result` (the answer, before the explanation is written), `done`. On the ask path there is no `result`; `done` carries the question. |
 | `make web` | 5173 | Vite UI. Proxies `/invocations` to `AGENT_PORT` (default 8080). The sidebar lists each graph node, how long it took, and the decider probabilities. |
 
 `make agent` and `make dev` run `make aws-check` first. It fails with a hint if `AWS_PROFILE` is unset, not in `~/.aws/config`, or has no live session.
@@ -56,8 +63,8 @@ All variables live in `.env`. Make exports them to every process.
 | `DECIDER_URL` | `http://127.0.0.1:8099` | `strands-decider serve` base URL |
 | `DECIDER_DEVICE` | `mps` on Apple silicon, else `cpu` | `mps`, `cuda`, or `cpu` |
 | `ROUTE_CONFIDENCE_MIN` | `0.6` | Below this, the agent asks the user to pick a workflow |
-| `EVAL_NOUL_MIN` | `0.6` | Minimum fulfils and grounded scores |
-| `MAX_RETRIES` | `1` | Revisions after a failed grade |
+| `EVAL_NOUL_MIN` | `0.6` | Threshold for fulfils, grounded, and premature |
+| `MAX_RETRIES` | `1` | Revisions after a failed fulfils grade |
 
 ## Tests
 

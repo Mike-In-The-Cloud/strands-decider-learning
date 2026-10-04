@@ -97,6 +97,7 @@ async def test_confident_route_runs_workflow_and_passes(monkeypatch, llm):
     assert result["explanation"] == "output-2"
     assert llm.calls == 2
     assert "fulfils: 0.91" in llm.messages[1][1].content
+    assert "fault: none" in llm.messages[1][1].content
 
 
 @pytest.mark.asyncio

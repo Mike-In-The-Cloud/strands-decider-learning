@@ -14,13 +14,19 @@ export type ScoreAnswer = {
 };
 export type Answer = NoulAnswer | ChoiceAnswer | ScoreAnswer;
 
+export type FaultLabel = "none" | "ignores_task" | "invents_facts" | "unfinished" | "wrong_format";
+export type EvalAction = "ask" | "revise" | "explain";
+
 export type Verdict = {
+  action: EvalAction;
   passed: boolean;
   fulfils: number;
   grounded: number;
+  premature: number;
   quality: number;
   quality_confidence: number;
   quality_breakdown?: { label: string; probability: number }[];
+  reason: { fault: FaultLabel; confidence: number; breakdown: { label: string; probability: number }[] };
 };
 
 export type AgentEvent = {

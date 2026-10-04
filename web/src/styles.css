@@ -114,6 +114,7 @@ article pre {
 
 .verdict.pass { color: #0f6e56; }
 .verdict.fail { color: #9a3412; }
+.verdict.ask { color: #8a8175; }
 
 .explanation {
   margin-top: 10px;

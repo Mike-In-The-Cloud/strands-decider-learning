@@ -27,9 +27,13 @@ async def explain(state: AgentState) -> dict:
 
 
 def _evaluation_text(state: AgentState, verdict: dict) -> str:
+    reason = verdict["reason"]
     breakdown = "\n".join(
         f"  - {row['label']}: {row['probability']:.2f}"
         for row in verdict.get("quality_breakdown", [])
+    )
+    faults = "\n".join(
+        f"  - {row['label']}: {row['probability']:.2f}" for row in reason["breakdown"]
     )
     return (
         f"User request:\n{state['input']}\n\n"
@@ -39,5 +43,7 @@ def _evaluation_text(state: AgentState, verdict: dict) -> str:
         f"- grounded: {verdict['grounded']:.2f}\n"
         f"- quality: {verdict['quality']:.2f} "
         f"(confidence {verdict.get('quality_confidence', 0.0):.2f})\n"
-        f"{breakdown}"
+        f"{breakdown}\n"
+        f"- fault: {reason['fault']} (confidence {reason['confidence']:.2f})\n"
+        f"{faults}"
     )
