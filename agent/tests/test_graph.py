@@ -123,6 +123,31 @@ async def test_failed_grade_retries_the_same_workflow_once(monkeypatch, llm):
 
 
 @pytest.mark.asyncio
+async def test_exhausted_retries_explain_the_failed_grade(monkeypatch, llm):
+    _patch_decider(
+        monkeypatch,
+        [
+            _choice("summarize", 0.9),
+            _grade(0.2, fault="unfinished"),
+            _grade(0.2, fault="unfinished"),
+        ],
+    )
+    result = await build_graph().ainvoke(initial_state("Summarise this note."))
+    # One revision is allowed; the revised draft is returned and explained, not retried again.
+    assert result["output"] == "output-2"
+    assert result["verdict"]["action"] == "explain"
+    assert result["verdict"]["passed"] is False
+    assert result["retries"] == 1
+    assert result["explanation"] == "output-3"
+    assert llm.calls == 3
+    # The revision is told what failed and which fault was found.
+    revision_text = "\n".join(m.content for m in llm.messages[1])
+    assert load_question("eval_fulfils").fail in revision_text
+    assert load_question("eval_fault").criteria["unfinished"] in revision_text
+    assert "fault: unfinished" in llm.messages[2][1].content
+
+
+@pytest.mark.asyncio
 async def test_stream_emits_node_timing_and_decider_detail(monkeypatch, llm):
     _patch_decider(monkeypatch, [_choice("extract", 0.88), _grade(0.7, 0.2)])
     # Ungrounded output: the graph asks the user instead of retrying or explaining.
