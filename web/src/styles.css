@@ -132,6 +132,15 @@ article pre {
   font-size: 12px;
 }
 
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  background: #8a8175;
+  vertical-align: baseline;
+}
+
 .empty { color: #8a8175; }
 .sidebar .empty { color: #c4b8a5; }
 

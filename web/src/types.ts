@@ -43,6 +43,7 @@ export type AgentEvent = {
   explanation?: string | null;
   error?: string;
   message?: string;
+  text?: string;
 };
 
 export type TraceNode = {
@@ -60,4 +61,5 @@ export type ChatMessage = {
   verdict?: Verdict | null;
   explanation?: string | null;
   explaining?: boolean;
+  streaming?: boolean;
 };

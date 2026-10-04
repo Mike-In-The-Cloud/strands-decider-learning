@@ -3,12 +3,14 @@ import type { AgentEvent, ChatMessage, TraceNode } from "../types";
 
 const SESSION_HEADER = "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id";
 const sessionId = `decision-agent-${crypto.randomUUID()}`;
+const ANSWER_NODES = new Set(["summarize", "classify", "create", "extract", "ask"]);
 
 export function useAgentStream() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [trace, setTrace] = useState<TraceNode[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const streamRef = { node: "" as string, fresh: false };
 
   async function send(prompt: string) {
     const text = prompt.trim();
@@ -31,7 +33,7 @@ export function useAgentStream() {
         throw new Error(`Request failed (${response.status})`);
       }
       for await (const event of readSSE(response.body)) {
-        applyEvent(event, setTrace, setMessages, setError);
+        applyEvent(event, setTrace, setMessages, setError, streamRef);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -48,6 +50,7 @@ function applyEvent(
   setTrace: Dispatch<SetStateAction<TraceNode[]>>,
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
   setError: Dispatch<SetStateAction<string | null>>,
+  streamRef: { node: string; fresh: boolean },
 ) {
   if (event.error && event.type !== "done") {
     setError(event.error);
@@ -81,30 +84,84 @@ function applyEvent(
   if (event.type === "llm" && event.node) {
     const node = event.node;
     const model = event.model;
+    if (ANSWER_NODES.has(node)) {
+      streamRef.node = node;
+      streamRef.fresh = true;
+    }
     setTrace((current) => attach(current, node, (item) => ({ ...item, model })));
+    return;
+  }
+
+  if (event.type === "token" && event.node && event.text) {
+    const node = event.node;
+    const text = event.text;
+    if (node === "explain") {
+      setMessages((current) => {
+        const last = current[current.length - 1];
+        if (last?.role !== "assistant") return current;
+        return [
+          ...current.slice(0, -1),
+          {
+            ...last,
+            explanation: `${last.explanation ?? ""}${text}`,
+            explaining: true,
+            streaming: true,
+          },
+        ];
+      });
+      return;
+    }
+    const fresh = streamRef.fresh;
+    streamRef.fresh = false;
+    streamRef.node = node;
+    setMessages((current) => applyAnswerToken(current, text, fresh));
     return;
   }
 
   if (event.type === "result") {
     // The answer is final; the explanation is still being written.
-    setMessages((current) => [
-      ...current,
-      {
-        role: "assistant",
-        text: event.output ?? "",
-        workflow: event.workflow,
-        verdict: event.verdict,
-        explaining: true,
-      },
-    ]);
+    setMessages((current) => {
+      const last = current[current.length - 1];
+      if (last?.role === "assistant" && last.streaming) {
+        return [
+          ...current.slice(0, -1),
+          {
+            ...last,
+            text: event.output ?? "",
+            workflow: event.workflow,
+            verdict: event.verdict,
+            explaining: true,
+            streaming: false,
+          },
+        ];
+      }
+      return [
+        ...current,
+        {
+          role: "assistant",
+          text: event.output ?? "",
+          workflow: event.workflow,
+          verdict: event.verdict,
+          explaining: true,
+        },
+      ];
+    });
     return;
   }
 
   if (event.type === "done") {
     setMessages((current) => {
       const last = current[current.length - 1];
-      if (last?.role === "assistant" && last.explaining) {
-        const updated = { ...last, explaining: false, explanation: event.explanation };
+      if (last?.role === "assistant" && (last.explaining || last.streaming)) {
+        const updated: ChatMessage = {
+          ...last,
+          streaming: false,
+          explaining: false,
+          explanation: event.explanation,
+          workflow: event.workflow,
+          verdict: event.verdict,
+        };
+        if (event.output != null) updated.text = event.output;
         return [...current.slice(0, -1), updated];
       }
       return [
@@ -119,6 +176,18 @@ function applyEvent(
       ];
     });
   }
+}
+
+function applyAnswerToken(current: ChatMessage[], text: string, fresh: boolean): ChatMessage[] {
+  const last = current[current.length - 1];
+  const open = last?.role === "assistant" && last.streaming === true;
+  if (fresh && open) {
+    return [...current.slice(0, -1), { ...last, text, streaming: true }];
+  }
+  if (fresh || !open) {
+    return [...current, { role: "assistant", text, streaming: true }];
+  }
+  return [...current.slice(0, -1), { ...last, text: last.text + text }];
 }
 
 function attach(current: TraceNode[], node: string, update: (item: TraceNode) => TraceNode) {

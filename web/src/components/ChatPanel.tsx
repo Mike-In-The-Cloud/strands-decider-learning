@@ -63,7 +63,7 @@ export function ChatPanel({
         {messages.map((message, index) => (
           <article key={`${message.role}-${index}`} className={message.role}>
             <div className="who">{message.role === "user" ? "You" : message.workflow ?? "Agent"}</div>
-            <pre>{message.text}</pre>
+            <pre>{message.text}{message.streaming && !message.explanation ? <span className="caret" /> : null}</pre>
             {message.verdict && (
               <div className={`verdict ${verdictClass(message.verdict)}`}>
                 {verdictLabel(message.verdict)} · fulfils {message.verdict.fulfils.toFixed(2)} · grounded{" "}
@@ -72,13 +72,14 @@ export function ChatPanel({
                 {message.verdict.reason.fault !== "none" && ` · fault ${message.verdict.reason.fault.replaceAll("_", " ")}`}
               </div>
             )}
-            {message.explaining && <div className="explanation pending">explaining the grades…</div>}
-            {message.explanation && (
+            {message.explaining && !message.explanation ? (
+              <div className="explanation pending">explaining the grades…</div>
+            ) : message.explanation ? (
               <div className="explanation">
                 <div className="who">why these grades · Haiku's reading of the decider</div>
-                <pre>{message.explanation}</pre>
+                <pre>{message.explanation}{message.explaining ? <span className="caret" /> : null}</pre>
               </div>
-            )}
+            ) : null}
           </article>
         ))}
       </div>
