@@ -14,15 +14,26 @@ async def run_llm_workflow(state: AgentState, name: str) -> dict:
     if feedback:
         messages.append(HumanMessage(content=feedback))
 
-    await deps.emit("llm", {"node": name, "model": deps.model_name()})
-    result = await deps.get_llm().ainvoke(messages)
+    text = await stream_llm(messages, name)
     # A failed verdict means this run is a revision, even if feedback text is empty.
     revising = bool(feedback) or (state.get("verdict") or {}).get("passed") is False
     return {
-        "output": message_text(result.content),
+        "output": text,
         "workflow": name,
         "retries": state["retries"] + (1 if revising else 0),
     }
+
+
+async def stream_llm(messages, node: str) -> str:
+    await deps.emit("llm", {"node": node, "model": deps.model_name()})
+    parts: list[str] = []
+    async for chunk in deps.get_llm().astream(messages):
+        delta = message_text(chunk.content)
+        if not delta:
+            continue
+        parts.append(delta)
+        await deps.emit("token", {"node": node, "text": delta})
+    return "".join(parts)
 
 
 def message_text(content: object) -> str:

@@ -13,10 +13,10 @@ class FakeLLM:
         self.calls = 0
         self.messages = []
 
-    async def ainvoke(self, messages):
+    async def astream(self, messages):
         self.calls += 1
         self.messages.append(messages)
-        return AIMessage(content=f"output-{self.calls}")
+        yield AIMessage(content=f"output-{self.calls}")
 
 
 class ScriptedDecider:
@@ -189,6 +189,13 @@ async def test_stream_sends_result_before_explanation(monkeypatch, llm):
     explain_end = next(e for e in events if e["type"] == "node_end" and e["node"] == "explain")
     assert events.index(result) < events.index(explain_end)
     assert events[-1]["explanation"] == "output-2"
+    tokens = [e for e in events if e["type"] == "token" and e["node"] == "summarize"]
+    assert tokens
+    assert events.index(tokens[0]) < events.index(result)
+    assert "".join(e["text"] for e in tokens) == result["output"]
+    explain_tokens = [e for e in events if e["type"] == "token" and e["node"] == "explain"]
+    assert "".join(e["text"] for e in explain_tokens) == events[-1]["explanation"]
+    assert events.index(result) < events.index(explain_tokens[0])
 
 
 @pytest.mark.asyncio

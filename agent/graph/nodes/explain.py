@@ -1,7 +1,7 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph import deps
-from graph.nodes._llm_turn import message_text
+from graph.nodes._llm_turn import stream_llm
 from graph.state import AgentState
 from prompts.loader import load_prompt
 
@@ -21,9 +21,8 @@ async def explain(state: AgentState) -> dict:
         SystemMessage(content=load_prompt("explain")),
         HumanMessage(content=_evaluation_text(state, verdict)),
     ]
-    await deps.emit("llm", {"node": "explain", "model": deps.model_name()})
-    result = await deps.get_llm().ainvoke(messages)
-    return {"explanation": message_text(result.content).strip()}
+    text = await stream_llm(messages, "explain")
+    return {"explanation": text.strip()}
 
 
 def _evaluation_text(state: AgentState, verdict: dict) -> str:
