@@ -1,6 +1,6 @@
 # Decision agent
 
-A [LangGraph](https://langchain-ai.github.io/langgraph/) agent hosted with [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/using-any-agent-framework.html). [Strands Decider 2B](https://strandsagents.com/blog/introducing-strands-decider/) picks one of four workflows. Claude Haiku writes the answer. The same decider grades it before it is returned.
+A [LangGraph](https://langchain-ai.github.io/langgraph/) agent hosted with [Amazon Bedrock AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/using-any-agent-framework.html). [Strands Decider 2B](https://github.com/strands-labs/strands-decider) ([introduction](https://strandsagents.com/blog/introducing-strands-decider/)) picks one of four workflows. Claude Haiku writes the answer. The same decider grades it before it is returned.
 
 Workflows: `summarize`, `classify`, `create`, `extract`. Prompts live in [`agent/prompts/`](agent/prompts). Graph nodes do not contain prompt text. Each node is its own file under [`agent/graph/nodes/`](agent/graph/nodes).
 
@@ -27,6 +27,8 @@ The fault never changes the action. The shape follows the upstream [`tool_call_i
 
 The decider cannot write a reason. It names the main fault as a probability over fixed options. `explain` asks Haiku to read the output against each criterion, starting from that fault, and say what most plausibly drove each grade. The UI shows this under the agent's reply, labelled as Haiku's reading.
 
+Haiku's text is streamed. Each workflow, `ask`, and `explain` call emits `token` events (`node` and a text delta) as the model writes. The chat appends them. A revision or an `ask` replaces the draft already on screen. Explanation tokens fill the block under the answer. `result` and `done` still carry the finished text.
+
 ## Run locally
 
 Prerequisites: [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) with an SSO profile that can call Bedrock. `make check` tells you which one is missing and how to install it.
@@ -45,8 +47,8 @@ Each process also runs on its own:
 | Target | Port | What it is |
 |---|---|---|
 | `make decider` | 8099 | `strands-decider serve`. Pins in [`decider/pyproject.toml`](decider/pyproject.toml). `GET /health` returns the model once loaded. |
-| `make agent` | 8080 | `BedrockAgentCoreApp` in [`agent/main.py`](agent/main.py) via `agentcore dev --port 8080`. Standalone it shows the AgentCore TUI (`--no-browser`); under `make dev` it uses `--logs` so all three processes log to the one terminal. Waits up to 10 s for a just-stopped agent to release the port, then fails if 8080 is taken (without `--port` the CLI would silently move to 8081 and the UI proxy would 500). `POST /invocations` streams `node_start`, `node_end` (with `ms`), `decider`, `llm`, `result` (the answer, before the explanation is written), `done`. On the ask path there is no `result`; `done` carries the question. |
-| `make web` | 5173 | Vite UI. Proxies `/invocations` to `AGENT_PORT` (default 8080). The sidebar lists each graph node, how long it took, and the decider probabilities. |
+| `make agent` | 8080 | `BedrockAgentCoreApp` in [`agent/main.py`](agent/main.py) via `agentcore dev --port 8080`. Standalone it shows the AgentCore TUI (`--no-browser`); under `make dev` it uses `--logs` so all three processes log to the one terminal. Waits up to 10 s for a just-stopped agent to release the port, then fails if 8080 is taken (without `--port` the CLI would silently move to 8081 and the UI proxy would 500). `POST /invocations` streams `node_start`, `node_end` (with `ms`), `decider`, `llm`, `token` (a text delta), `result` (the finished answer and verdict, before the explanation is written), `done`. On the ask path there is no `result`; `done` carries the question. |
+| `make web` | 5173 | Vite UI. Proxies `/invocations` to `AGENT_PORT` (default 8080). The reply appears as Haiku writes it, and the view follows the latest text. The sidebar lists each graph node, how long it took, and the decider probabilities. |
 
 `make agent` and `make dev` run `make aws-check` first. It fails with a hint if `AWS_PROFILE` is unset, not in `~/.aws/config`, or has no live session.
 
@@ -85,3 +87,7 @@ pnpm dlx @aws/agentcore deploy
 `agentcore/cdk` stays on npm. The AgentCore scaffold scripts call `npm` directly.
 
 The deployed runtime cannot reach a decider on your laptop. Set `DECIDER_URL` to a host the runtime can call before you rely on the cloud endpoint. Hosting the decider is out of scope. The execution role still needs `bedrock:InvokeModel` for Haiku.
+
+## License
+
+This is a learning project, not a packaged library. It is released under the [MIT License](LICENSE).
