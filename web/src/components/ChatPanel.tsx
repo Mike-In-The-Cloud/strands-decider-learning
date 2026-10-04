@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, Verdict } from "../types";
 
 const EXAMPLES = [
@@ -44,6 +44,16 @@ export function ChatPanel({
   onSend: (prompt: string) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const transcript = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+
+  useEffect(() => {
+    const el = transcript.current;
+    if (!el) return;
+    if (messages[messages.length - 1]?.role === "user") stick.current = true;
+    if (!stick.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   return (
     <main className="chat">
@@ -58,7 +68,14 @@ export function ChatPanel({
           </button>
         ))}
       </div>
-      <div className="transcript">
+      <div
+        className="transcript"
+        ref={transcript}
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        }}
+      >
         {messages.length === 0 && <p className="empty">Send a request. The decider picks the workflow, Haiku writes it, then the decider grades it.</p>}
         {messages.map((message, index) => (
           <article key={`${message.role}-${index}`} className={message.role}>

@@ -127,7 +127,7 @@ function applyEvent(
           ...current.slice(0, -1),
           {
             ...last,
-            text: event.output ?? "",
+            text: event.output || last.text,
             workflow: event.workflow,
             verdict: event.verdict,
             explaining: true,
@@ -157,11 +157,11 @@ function applyEvent(
           ...last,
           streaming: false,
           explaining: false,
-          explanation: event.explanation,
-          workflow: event.workflow,
-          verdict: event.verdict,
+          explanation: event.explanation ?? last.explanation,
+          workflow: event.workflow ?? last.workflow,
+          verdict: event.verdict === undefined ? last.verdict : event.verdict,
         };
-        if (event.output != null) updated.text = event.output;
+        if (event.output) updated.text = event.output;
         return [...current.slice(0, -1), updated];
       }
       return [
