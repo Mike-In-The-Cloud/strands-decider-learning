@@ -1,13 +1,30 @@
+# Local env. .env.example is the committed template.
 .env
+.env.*
+!.env.example
+
+# Python
 .venv/
+.venv-*/
 __pycache__/
 .pytest_cache/
 .mypy_cache/
-*.pyc
+.ruff_cache/
+.coverage
+htmlcov/
+*.py[cod]
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local agent scratch and OS junk
+.superpowers/
+*.log
 .DS_Store
-
-web/node_modules/
-web/dist/
-
-agentcore/cdk/node_modules/
-agentcore/cdk/cdk.out/
